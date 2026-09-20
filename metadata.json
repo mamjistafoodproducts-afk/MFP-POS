@@ -1,0 +1,6 @@
+{
+  "name": "Mamjista Food Products POS",
+  "description": "Manufacturing & Shop POS for Atta, Besan, Sattu, and Masale with customer loyalty program, barcode scanning, FIFO inventory, B2B 7-day credit, and wholesale sales team companion mobile app.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
