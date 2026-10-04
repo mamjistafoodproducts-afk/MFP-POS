@@ -15,16 +15,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-
       - name: Prepare static Blogger build
         env:
           GOOGLE_CLIENT_ID: 726581421832-e11iuddppu9ah63gmmou7qc7pfdckl20.apps.googleusercontent.com
@@ -32,62 +28,33 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import os, re
-
-          # 1) Inject the existing Google OAuth Web Client ID as a safe public client-side value.
           p = Path('src/utils/googleSheetsService.ts')
           s = p.read_text()
           old = """export function getGoogleClientId(): string {\n  if (typeof window !== 'undefined' && window.gapi_client_id) {\n    return window.gapi_client_id;\n  }\n  return localStorage.getItem('mamjista_custom_google_client_id') || '';\n}"""
           new = """export function getGoogleClientId(): string {\n  if (typeof window !== 'undefined' && window.gapi_client_id) {\n    return window.gapi_client_id;\n  }\n  return localStorage.getItem('mamjista_custom_google_client_id') || '""" + os.environ['GOOGLE_CLIENT_ID'] + """';\n}"""
-          if old not in s:
-              raise SystemExit('Could not find Google client ID function')
+          if old not in s: raise SystemExit('Could not find Google client ID function')
           p.write_text(s.replace(old, new))
-
-          # 2) Remove the Node/Express-only /api/sync dependency for Blogger.
           p = Path('src/utils/storage.ts')
           s = p.read_text()
           pattern = re.compile(r"export async function syncWithBackend\(data: \{.*?\n\}\n\nexport function downloadCSV", re.S)
-          replacement = """export async function syncWithBackend(data: {\n  sales?: Invoice[];\n  inventory?: Product[];\n  suppliers?: Supplier[];\n  customers?: Customer[];\n  cashBook?: CashTransaction[];\n  wholesaleOrders?: WholesaleOrder[];\n  fieldPayments?: FieldPaymentReceipt[];\n}): Promise<{ success: boolean; message: string; timestamp?: string }> {\n  // Blogger build: durable cloud backup is handled by the Google Sheets module.\n  // POS transactions remain available offline in browser localStorage.\n  void data;\n  return {\n    success: false,\n    message: 'Local browser storage active. Use Google Sheets Live Cloud Backup for cloud synchronization.'\n  };\n}\n\nexport function downloadCSV"""
+          replacement = """export async function syncWithBackend(data: {\n  sales?: Invoice[]; inventory?: Product[]; suppliers?: Supplier[]; customers?: Customer[];\n  cashBook?: CashTransaction[]; wholesaleOrders?: WholesaleOrder[]; fieldPayments?: FieldPaymentReceipt[];\n}): Promise<{ success: boolean; message: string; timestamp?: string }> {\n  void data;\n  return { success: false, message: 'Local browser storage active. Use Google Sheets Live Cloud Backup for cloud synchronization.' };\n}\n\nexport function downloadCSV"""
           s2, n = pattern.subn(replacement, s)
-          if n != 1:
-              raise SystemExit(f'Could not replace backend sync function: {n}')
+          if n != 1: raise SystemExit(f'Could not replace backend sync function: {n}')
           p.write_text(s2)
-
-          # 3) Make the UI truthful about the static Blogger build.
-          for name in ['src/components/OfflineSyncBar.tsx', 'src/components/DataExportHub.tsx']:
-              p = Path(name)
-              s = p.read_text()
-              s = s.replace('Online Mode (Server Connected)', 'Online Mode (Google Sheets Ready)')
-              s = s.replace('Syncing data with server...', 'Saving locally / Google Sheets...')
-              s = s.replace('All data synced successfully!', 'Local data saved. Google Sheets can be synced from the backup panel.')
-              s = s.replace('Backup & REST API Documentation', 'Backup & Google Sheets')
-              s = s.replace('Live Backend REST API Endpoints', 'Static Blogger Mode')
-              s = s.replace('ACTIVE ON PORT 3000', 'NO SERVER REQUIRED')
-              p.write_text(s)
           PY
-
       - name: Build frontend
         run: npx vite build --base=./
-
       - name: Generate Blogger XML theme
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import html, re
-
           dist = Path('dist')
           js_files = list((dist/'assets').glob('*.js'))
           css_files = list((dist/'assets').glob('*.css'))
-          if len(js_files) != 1:
-              raise SystemExit(f'Expected exactly one JS bundle, found {len(js_files)}: {js_files}')
-          if len(css_files) != 1:
-              raise SystemExit(f'Expected exactly one CSS bundle, found {len(css_files)}: {css_files}')
-
-          js = js_files[0].read_text()
-          css = css_files[0].read_text()
-
-          def cdata(x):
-              return '<![CDATA[' + x.replace(']]>', ']]]]><![CDATA[>') + ']]>'
-
+          if len(js_files) != 1: raise SystemExit(f'Expected exactly one JS bundle, found {len(js_files)}')
+          if len(css_files) != 1: raise SystemExit(f'Expected exactly one CSS bundle, found {len(css_files)}')
+          js = js_files[0].read_text(); css = css_files[0].read_text()
+          def cdata(x): return '<![CDATA[' + x.replace(']]>', ']]]]><![CDATA[>') + ']]>'
           xml = f'''<?xml version="1.0" encoding="UTF-8" ?>
           <!DOCTYPE html>
           <html b:version='2' class='v2' expr:dir='data:blog.languageDirection'
@@ -100,27 +67,18 @@ jobs:
             <meta content='width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no' name='viewport'/>
             <meta content='noindex,nofollow' name='robots'/>
             <title>Mamjista Food Products POS</title>
-            <meta content='Mamjista Food Products POS - billing, inventory, cashbook, loyalty, wholesale and Google Sheets cloud backup' name='description'/>
             <b:include data='blog' name='all-head-content'/>
             <script src='https://accounts.google.com/gsi/client' async='async' defer='defer'></script>
-            <style type='text/css'>
-              {cdata(css)}
-            </style>
+            <style type='text/css'>{cdata(css)}</style>
           </head>
           <body>
             <div id='root'></div>
-            <b:section id='blogger-hidden-section' class='main' maxwidgets='1' showaddelement='no'/>
-            <script type='text/javascript'>
-              {cdata(js)}
-            </script>
+            <b:section id='bloggerHidden' class='main' maxwidgets='1' showaddelement='no'/>
+            <script type='text/javascript'>{cdata(js)}</script>
           </body>
-          </html>
-          '''
-          out = Path('blogger-template.xml')
-          out.write_text(xml, encoding='utf-8')
-          print(f'Wrote {out} ({out.stat().st_size} bytes)')
+          </html>'''
+          Path('blogger-template.xml').write_text(xml, encoding='utf-8')
           PY
-
       - name: Commit generated Blogger XML
         run: |
           git config user.name 'github-actions[bot]'
@@ -128,7 +86,6 @@ jobs:
           git add blogger-template.xml
           git diff --cached --quiet || git commit -m 'Generate Blogger POS XML [skip ci]'
           git push
-
       - name: Upload XML artifact
         uses: actions/upload-artifact@v4
         with:
