@@ -30,14 +30,32 @@ jobs:
           import os, re
           p = Path('src/utils/googleSheetsService.ts')
           s = p.read_text()
-          old = """export function getGoogleClientId(): string {\n  if (typeof window !== 'undefined' && window.gapi_client_id) {\n    return window.gapi_client_id;\n  }\n  return localStorage.getItem('mamjista_custom_google_client_id') || '';\n}"""
-          new = """export function getGoogleClientId(): string {\n  if (typeof window !== 'undefined' && window.gapi_client_id) {\n    return window.gapi_client_id;\n  }\n  return localStorage.getItem('mamjista_custom_google_client_id') || '""" + os.environ['GOOGLE_CLIENT_ID'] + """';\n}"""
+          old = """export function getGoogleClientId(): string {
+  if (typeof window !== 'undefined' && window.gapi_client_id) {
+    return window.gapi_client_id;
+  }
+  return localStorage.getItem('mamjista_custom_google_client_id') || '';
+}"""
+          new = """export function getGoogleClientId(): string {
+  if (typeof window !== 'undefined' && window.gapi_client_id) {
+    return window.gapi_client_id;
+  }
+  return localStorage.getItem('mamjista_custom_google_client_id') || '""" + os.environ['GOOGLE_CLIENT_ID'] + """';
+}"""
           if old not in s: raise SystemExit('Could not find Google client ID function')
           p.write_text(s.replace(old, new))
           p = Path('src/utils/storage.ts')
           s = p.read_text()
           pattern = re.compile(r"export async function syncWithBackend\(data: \{.*?\n\}\n\nexport function downloadCSV", re.S)
-          replacement = """export async function syncWithBackend(data: {\n  sales?: Invoice[]; inventory?: Product[]; suppliers?: Supplier[]; customers?: Customer[];\n  cashBook?: CashTransaction[]; wholesaleOrders?: WholesaleOrder[]; fieldPayments?: FieldPaymentReceipt[];\n}): Promise<{ success: boolean; message: string; timestamp?: string }> {\n  void data;\n  return { success: false, message: 'Local browser storage active. Use Google Sheets Live Cloud Backup for cloud synchronization.' };\n}\n\nexport function downloadCSV"""
+          replacement = """export async function syncWithBackend(data: {
+  sales?: Invoice[]; inventory?: Product[]; suppliers?: Supplier[]; customers?: Customer[];
+  cashBook?: CashTransaction[]; wholesaleOrders?: WholesaleOrder[]; fieldPayments?: FieldPaymentReceipt[];
+}): Promise<{ success: boolean; message: string; timestamp?: string }> {
+  void data;
+  return { success: false, message: 'Local browser storage active. Use Google Sheets Live Cloud Backup for cloud synchronization.' };
+}
+
+export function downloadCSV"""
           s2, n = pattern.subn(replacement, s)
           if n != 1: raise SystemExit(f'Could not replace backend sync function: {n}')
           p.write_text(s2)
@@ -53,7 +71,8 @@ jobs:
           css_files = list((dist/'assets').glob('*.css'))
           if len(js_files) != 1: raise SystemExit(f'Expected exactly one JS bundle, found {len(js_files)}')
           if len(css_files) != 1: raise SystemExit(f'Expected exactly one CSS bundle, found {len(css_files)}')
-          js = js_files[0].read_text(); css = css_files[0].read_text()
+          js = js_files[0].read_text()
+          css = css_files[0].read_text()
           def cdata(x): return '<![CDATA[' + x.replace(']]>', ']]]]><![CDATA[>') + ']]>'
           xml = f'''<?xml version="1.0" encoding="UTF-8" ?>
           <!DOCTYPE html>
@@ -69,7 +88,9 @@ jobs:
             <title>Mamjista Food Products POS</title>
             <b:include data='blog' name='all-head-content'/>
             <script src='https://accounts.google.com/gsi/client' async='async' defer='defer'></script>
-            <style type='text/css'>{cdata(css)}</style>
+            <b:skin><![CDATA[
+            {css}
+            ]]></b:skin>
           </head>
           <body>
             <div id='root'></div>
